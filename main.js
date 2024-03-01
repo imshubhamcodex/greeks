@@ -157,7 +157,7 @@ function main() {
 function find_date_diff(date) {
   const today = new Date();
   const targetDate = new Date(date);
-  const differenceMs = today - targetDate;
+  const differenceMs = Math.abs(today - targetDate);
   const differenceDays = differenceMs / (1000 * 60 * 60 * 24);
 
   return Number(differenceDays);
