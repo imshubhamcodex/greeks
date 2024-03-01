@@ -111,8 +111,19 @@ function main() {
         });
       }
     });
-    document.getElementById('puts').colSpan = '10'
-    document.getElementById('calls').colSpan = '10'
+    document.getElementById("puts").colSpan = "10";
+    document.getElementById("calls").colSpan = "10";
+
+    // Adding hover effect and sentiments on each strike price
+    let tableRowEle = document.getElementsByTagName("tr");
+    Array.from(tableRowEle).forEach(e => {
+      e.addEventListener("mouseover", function() {
+        e.style.backgroundColor = "grey";
+      });
+      e.addEventListener("mouseout", function() {
+        e.style.backgroundColor = "initial";
+      });
+    });
 
     Array.from(body.children).forEach((e, i) => {
       let ir = 10 / 100;
@@ -164,14 +175,12 @@ function find_date_diff(date) {
 }
 
 function feed_print(price, strike_price, ir, iv, days, type) {
-  const S = price; // Underlying price
-  const K = strike_price; // Strike price
-  const r = ir; // Risk-free interest rate
-  const sigma = iv; // Volatility
-  const T_days = days; // Time to expiration (in days)
-  const optionType = type; // 'call' or 'put'
-
-  // console.log(price, strike_price, ir, iv, days, type);
+  const option = type; // "call" or "put"
+  const underlyingPrice = price; // Current price of the underlying asset
+  const strikePrice = strike_price; // Strike price of the option
+  const timeToExpiration = days / 360; // Time to expiration in years
+  const riskFreeRate = ir; // Risk-free interest rate
+  const volatility = iv / 100; // Volatility of the underlying asset
 
   // Calculate option Greeks
   if (iv === "N/A") {
@@ -184,69 +193,84 @@ function feed_print(price, strike_price, ir, iv, days, type) {
       rho: "N/A"
     };
   } else {
-    const greeks = calculateOptionGreeks(S, K, r, sigma, T_days, optionType);
+    const greeks = blackScholes(
+      option,
+      underlyingPrice,
+      strikePrice,
+      timeToExpiration,
+      riskFreeRate,
+      volatility
+    );
     return greeks;
   }
 }
 
-// Function to calculate the cumulative distribution function of the standard normal distribution
-function normCDF(x) {
-  const b1 = 0.31938153;
-  const b2 = -0.356563782;
-  const b3 = 1.781477937;
-  const b4 = -1.821255978;
-  const b5 = 1.330274429;
-  const p = 0.2316419;
-  const c = 0.39894228;
+// Black-Scholes option pricing model
+function blackScholes(optionType, S, K, T, r, sigma) {
+  const d1 =
+    (Math.log(S / K) + (r + 0.5 * Math.pow(sigma, 2)) * T) /
+    (sigma * Math.sqrt(T));
+  const d2 = d1 - sigma * Math.sqrt(T);
 
-  if (x >= 0) {
-    const t = 1 / (1 + p * x);
-    return (
-      1 -
-      c *
-        Math.exp(-x * x / 2) *
-        (t * (b1 + t * (b2 + t * (b3 + t * (b4 + t * b5)))))
-    );
+  if (optionType === "call") {
+    const callPrice =
+      S * cumulativeDistribution(d1) -
+      K * Math.exp(-r * T) * cumulativeDistribution(d2);
+    const delta = cumulativeDistribution(d1);
+    const gamma = probabilityDensity(d1) / (S * sigma * Math.sqrt(T));
+    const theta =
+      -(S * probabilityDensity(d1) * sigma) / (2 * Math.sqrt(T)) -
+      r * K * Math.exp(-r * T) * cumulativeDistribution(d2);
+    const vega = S * Math.sqrt(T) * probabilityDensity(d1);
+    const rho = K * T * Math.exp(-r * T) * cumulativeDistribution(d2);
+    return {
+      price: callPrice,
+      delta: delta.toFixed(7),
+      gamma: gamma.toFixed(7),
+      theta: theta.toFixed(2),
+      vega: vega.toFixed(3),
+      rho: rho.toFixed(4)
+    };
+  } else if (optionType === "put") {
+    const putPrice =
+      K * Math.exp(-r * T) * cumulativeDistribution(-d2) -
+      S * cumulativeDistribution(-d1);
+    const delta = cumulativeDistribution(d1) - 1;
+    const gamma = probabilityDensity(d1) / (S * sigma * Math.sqrt(T));
+    const theta =
+      -(S * probabilityDensity(d1) * sigma) / (2 * Math.sqrt(T)) +
+      r * K * Math.exp(-r * T) * cumulativeDistribution(-d2);
+    const vega = S * Math.sqrt(T) * probabilityDensity(d1);
+    const rho = -K * T * Math.exp(-r * T) * cumulativeDistribution(-d2);
+    return {
+      price: putPrice,
+      delta: delta.toFixed(6),
+      gamma: gamma.toFixed(7),
+      theta: theta.toFixed(2),
+      vega: vega.toFixed(3),
+      rho: rho.toFixed(4)
+    };
   } else {
-    return 1 - normCDF(-x);
+    throw new Error("Invalid option type");
   }
 }
 
-// Function to calculate option Greeks
-function calculateOptionGreeks(S, K, r, sigma, T_days, optionType) {
-  const T = T_days / 365; // Convert time to expiration to years
-  const d1 =
-    (Math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * Math.sqrt(T));
-  const d2 = d1 - sigma * Math.sqrt(T);
-  const N_d1 = normCDF(d1);
-  const N_d2 = normCDF(d2);
-
-  const delta = optionType === "call" ? N_d1 : N_d1 - 1;
-  const gamma =
-    Math.exp(-0.5 * d1 ** 2) / (S * sigma * Math.sqrt(2 * Math.PI * T));
-  const theta =
-    (-(
-      S *
-      sigma *
-      Math.exp(-0.5 * d1 ** 2) /
-      (2 * Math.sqrt(2 * Math.PI * T))
-    ) -
-      r * K * Math.exp(-r * T) * N_d2) /
-    365;
-  const vega =
-    S * Math.sqrt(T) * Math.exp(-0.5 * d1 ** 2) * 0.01 / Math.sqrt(2 * Math.PI);
-  const rho =
-    optionType === "call"
-      ? K * T * Math.exp(-r * T) * N_d2 * 0.01
-      : -K * T * Math.exp(-r * T) * normCDF(-d2) * 0.01;
-
-  return {
-    delta: delta.toFixed(5),
-    gamma: gamma.toFixed(7),
-    theta: theta.toFixed(2),
-    vega: vega.toFixed(4),
-    rho: rho.toFixed(5)
-  };
+// Cumulative distribution function for standard normal distribution
+function cumulativeDistribution(x) {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989423 * Math.exp(-x * x / 2);
+  const prob =
+    d *
+    t *
+    (0.3193815 +
+      t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+  if (x > 0) {
+    return 1 - prob;
+  }
+  return prob;
 }
 
-document.getElementById("expirySelect").addEventListener("change", main)
+// Probability density function for standard normal distribution
+function probabilityDensity(x) {
+  return Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
+}
